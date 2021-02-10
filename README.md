@@ -17,9 +17,9 @@ This is a compilation of all the guided projects I've done throughout the Data A
 * [SQL Business Analysis Project](projects/SQL/SQL_Business_Analysis_Project.Rmd)
 * [Designing and Creating a Database](projects/SQL/Designing_and_Creating_a_Database.Rmd)
 * [APIs: New York Solar Resource Data](projects/APIs/NY_Solar_Resources.Rmd)
-* [Web Scraping: Analysing Movie Ratings](projects/Web Scraping/Analyzing_Movie_Ratings.Rmd )
+* [Web Scraping: Analysing Movie Ratings](projects/web-scraping/Analyzing_Movie_Ratings.Rmd )
 
 **Probability and Statistics**
 * [Investigating Fandango Movie Ratings](projects/Investigating-Fandango-Movie_Rating/Investigating_Fandango_Movie_Ratings.Rmd)
-
+g
 
