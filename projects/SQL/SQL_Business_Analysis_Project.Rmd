@@ -1,0 +1,247 @@
+---
+title: "SQL Business Analysis Project"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(RSQLite)
+library(DBI)
+```
+
+# Create a helper function
+```{r}
+
+db <- 'chinook.db'
+
+run_query <- function(query){
+  conn <-  dbConnect(SQLite(), db)
+  result <- dbGetQuery(conn, query)
+  dbDisconnect(conn)
+  return(result)
+}
+
+show_tables <- function(){
+  q <- 'SELECT name, type FROM sqlite_master WHERE type IN ("table","view");'
+  return(run_query(q))
+}
+
+show_tables()
+```
+
+# Analyzing the most sold genres in USA
+```{r}
+q <- ' 
+WITH usa AS 
+(SELECT * FROM customer WHERE country = "USA") 
+SELECT 
+  g.name, 
+  SUM(il.quantity) n_sold, 
+  CAST(SUM(il.quantity) AS FLOAT) / (select SUM(quantity) from invoice_line) pct_sold  
+FROM usa  
+INNER JOIN invoice i ON i.customer_id = usa.customer_id 
+INNER JOIN invoice_line il ON il.invoice_id = i.invoice_id 
+INNER JOIN track t ON t.track_id = il.track_id 
+INNER JOIN genre g ON g.genre_id = t.genre_id 
+GROUP BY g.name ORDER BY n_sold DESC;
+'
+
+genres_df <- run_query(q)
+
+```
+
+
+# Visualizing most sold genres
+```{r}
+genres_df %>% 
+  ggplot(aes(x = reorder(name, pct_sold), y = pct_sold, fill = -pct_sold)) +
+  geom_col() +
+  coord_flip() +
+  ylab("percentage") +
+  xlab("genre") +
+  theme(panel.background = element_rect(fill = "white"))
+```
+
+
+# Sales assigned to each sales support agent within the company
+
+```{r}
+q_sales <- 'WITH sales_agents AS 
+(SELECT * FROM employee
+WHERE title = "Sales Support Agent")
+SELECT 
+  sa.first_name || " " || sa.last_name sales_agent,
+  sa.reports_to,
+  sa.birthdate,
+  sa.hire_date,
+  sa.city,
+  SUM(i.total) sales_amount
+FROM sales_agents sa
+INNER JOIN customer c ON c.support_rep_id = sa.employee_id
+INNER JOIN invoice i ON i.customer_id = c.customer_id 
+GROUP BY sa.employee_id
+ORDER BY sales_amount DESC;
+'
+
+sales_per_agent <- run_query(q_sales)
+sales_per_agent
+```
+```{r}
+sales_per_agent %>% 
+  ggplot(aes(x = sales_agent, y = sales_amount, fill = -sales_amount)) +
+  geom_col()
+
+```
+
+
+From the information we have, the three sales agents are from the same city (Calgary), and they are hired in the same year, but the person with more experience is the agent with more sales. She is also the youngest. Female agents sale more than the male agent.
+
+# Analyze the sales data for customers from each country
+```{r}
+# Total number of customers
+# Total value of sales
+# Average value of sales per customer
+# Average order value
+
+q_country <- 'WITH country_sales AS 
+(SELECT 
+  c.country,
+  COUNT(distinct c.customer_id) n_customers,
+  SUM(i.total) total_sales,
+  SUM(i.total) / COUNT(distinct c.customer_id) avg_sale,
+  COUNT(distinct i.invoice_id) n_invoices,
+  SUM(i.total) / COUNT(distinct i.invoice_id) avg_invoice
+FROM customer c
+INNER JOIN invoice i ON i.customer_id = c.customer_id
+INNER JOIN invoice_line il ON il.invoice_id = i.invoice_id
+GROUP BY c.country)
+
+SELECT 
+  country_grouped,
+  total_customers,
+  total_sales,
+  avg_sale,
+  avg_invoice
+FROM
+(SELECT 
+  CASE
+    WHEN n_customers = 1 THEN "Others"
+    ELSE country
+    END AS country_grouped,
+  CASE 
+    WHEN n_customers = 1 THEN 1
+    ELSE 0
+    END AS sort,
+  SUM(n_customers) total_customers,
+  SUM(total_sales) total_sales,
+  SUM(total_sales) / SUM(n_customers) avg_sale,
+  SUM(total_sales) / SUM(n_invoices) avg_invoice
+FROM country_sales
+GROUP BY country_grouped
+ORDER BY sort ASC, total_sales DESC);
+
+
+'
+sales_by_country <- run_query(q_country)
+sales_by_country 
+
+```
+
+
+USA is the country with more total sales and more customers, followed by Canada and Brazil by far. The average sale for Czech Republic is the highest.
+
+# Visualizing sales by country
+```{r}
+# Number of customers by country
+sales_by_country %>% 
+  ggplot(aes(x=country_grouped, y = total_customers, fill = -total_customers)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  labs(title = "Number of customers by country", x = "Countries", y = "")
+
+# Total sales by country
+sales_by_country %>% 
+  ggplot(aes(x = country_grouped, y = total_sales, fill = -total_sales)) +
+  geom_col(show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Average sale by country
+sales_by_country %>% 
+  ggplot(aes(x = country_grouped, y = avg_sale, fill = -avg_sale)) +
+  geom_col(show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+```
+
+
+USA is the country with most sales and Czech Republic the market with highest average sale. This two countries look the more interesting for investment.
+
+Other small countries could look interesting for the number of sales and the total amount, by de average sale in this countries are the lowest.
+
+# What percentage of purchases are individual tracks versus whole albums
+
+Identifying if an invoice contains all the tracks from an album
+list of tracks from an invoice and comparing it to the list of tracks from an album.
+
+STEPS:
+* Number of tracks by album.
+* Group invoices by album and number of tracks of each album
+* If number of tracks of each album bought equal number of tracks of the album then customer bought the whole album. Else, the customer bought individual tracks.
+
+GOAL:
+Categorize each invoice as either an album purchase or not, and calculates the following summary statistics:
+
+*    Number of invoices
+*    Percentage of invoices
+
+
+```{r}
+q <- '
+WITH 
+  songs_by_album AS
+  (SELECT 
+    t.album_id,
+    COUNT(distinct t.track_id) n_tracks
+  FROM track t 
+  GROUP BY album_id),
+  
+  songs_by_invoice AS
+(SELECT
+  il.invoice_id,
+  t.album_id,
+  COUNT(distinct il.track_id) tracks_purchased
+FROM invoice_line il
+INNER JOIN track t ON t.track_id = il.track_id
+GROUP BY t.album_id, il.invoice_id),
+
+  tra_or_alb AS
+(SELECT
+  invoice_id,
+  si.album_id,
+  n_tracks,
+  tracks_purchased,
+  CASE WHEN
+    n_tracks = tracks_purchased THEN "album"
+    ELSE "tracks"
+    END AS album_or_tracks
+FROM songs_by_album sa
+INNER JOIN songs_by_invoice si ON si.album_id = sa.album_id)
+
+SELECT 
+  album_or_tracks,
+  COUNT(invoice_id) num_invoices,
+  CAST(COUNT(invoice_id) AS FLOAT) / (SELECT COUNT(invoice_id) FROM tra_or_alb) pct_invoices
+FROM tra_or_alb
+GROUP BY album_or_tracks
+'
+run_query(q)
+```
+
+Most people buy tracks and not the whole album. The strategy they are considering (to purchase only the most popular tracks from each album from record companies, instead of purchasing every track from an album) looks right.
+
+
+
+
+
+
+

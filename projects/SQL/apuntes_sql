@@ -1,0 +1,196 @@
+# Apuntes SQL
+
+    # Para condiciones
+SELECT CASE
+WHEN <condition_1> THEN <value_1>
+WHEN <condition_2> THEN <value_2>
+ELSE <value_3>
+END AS <new_column_name>
+FROM
+
+
+SELECT
+FROM
+GROUP BY
+LIMIT
+
+    # Si queremos filtrar después de agrupar -> HAVING
+
+SELECT
+FROM
+GROUP BY
+HAVING
+
+    # Orden de las cláusulas
+FROM
+WHERE
+SELECT
+ORDER BY
+LIMIT
+
+    # To get float value, we can use the CAST()
+
+SELECT CAST(Women AS Float) / CAST(Total AS Float) AS women_ratio
+
+    # IN()
+
+SELECT
+FROM
+WHERE X IN ( , , , )
+
+    # IN (SUBQUERY)
+
+SELECT Major_category, Major
+  FROM recent_grads
+ WHERE Major_category IN (SELECT Major_category 
+                          FROM recent_grads 
+                          GROUP BY Major_category 
+                          ORDER BY SUM(TOTAL) DESC 
+                          LIMIT 3);
+ 
+    # INNER JOIN
+SELECT [column_names] 
+FROM [table_one]
+INNER JOIN [table_two] 
+ON [table1.col = tabla2.col];
+
+SELECT c.*, f.name AS country_name
+FROM facts AS f
+INNER JOIN cities AS c
+ON c.facts_id = f.id
+LIMIT 5
+
+    # IS NULL, IS NOT NULL
+
+WHERE column_name_in_cities IS NULL
+WHERE column_name_in_cities IS NOT NULL
+
+    # ORDER BY número de columna
+SELECT name, migration_rate FROM FACTS
+ORDER BY 2 DESC / ORDER BY migration_rate DESC
+
+
+SELECT c.name capital_city, f.name country, c.population
+FROM facts f
+INNER JOIN (
+    SELECT * FROM cities
+    WHERE population > 10000000 AND capital = 1
+    ) c ON c.facts_id = f.id
+ORDER BY c.population DESC
+
+SELECT c.name capital_city, f.name country, c.population
+FROM facts f
+INNER JOIN cities AS c
+ON c.facts_id = f.id
+WHERE c.population > 10000000 AND c.capital = 1
+ORDER BY c.population DESC
+
+# Facts
+
+SELECT f.name as country, (SELECT SUM(c.population) FROM cities AS c GROUP BY c.name) AS urban_pop, f.population AS total_pop, (CAST(urban_pop AS FLOAT)/total_pop) AS urban_pct
+FROM facts as f
+INNER JOIN cities as c
+ON c.facts_id = f.id
+WHERE urban_pct > 0.5
+
+# INNER QUERY
+
+SELECT 
+    f.name as country, 
+    c.urban_pop, 
+    f.population AS total_pop, 
+    (CAST(urban_pop AS FLOAT)/f.population) AS urban_pct
+FROM facts as f
+INNER JOIN (
+    SELECT 
+        facts_id, 
+        SUM(population) AS urban_pop
+    FROM cities
+    GROUP BY facts_id) as c
+ON c.facts_id = f.id
+WHERE urban_pct > 0.5
+ORDER BY urban_pct ASC
+
+# JOIN de múltiples tablas
+
+SELECT [column_names] FROM [table_name_one]
+[join_type] JOIN [table_name_two] ON [join_constraint]
+[join_type] JOIN [table_name_three] ON [join_constraint];
+
+SELECT * FROM invoice_line il
+INNER JOIN track t ON t.track_id = il.track_id
+INNER JOIN media_type mt ON mt.media_type_id = t.media_type_id
+WHERE invoice_id = 3;
+
+# Uniones de una tabla consigo misma
+SELECT
+    e1.employee_id,
+    e2.employee_id supervisor_id
+FROM employee e1
+INNER JOIN employee e2 on e1.reports_to = e2.employee_id
+LIMIT 4;
+
+# concatenate operator: ||
+
+# buscar una parte del contenido
+WHERE [column_name] LIKE "%pattern%"
+
+# usando CASE
+SELECT
+    media_type_id,
+    name,
+    CASE
+        WHEN name LIKE '%Protected%' THEN 1
+        ELSE 0
+        END
+        AS protected
+FROM media_type;
+
+# Ultimo ejercicio
+SELECT 
+    c.first_name || " " || c.last_name customer_name,
+    (SELECT COUNT(*)
+     FROM invoice_id i
+     GROUP BY invoice_id) number_of_purchases,
+    SUM(i.total_spent) total_spent,
+    CASE
+        WHEN SUM(i.total_spent) < 40 THEN "small spender"
+        WHEN SUM(i.total_spent) > 100 THEN "big spender"
+        ELSE "regular"
+        END
+        AS customer_category
+FROM customer AS c
+INNER JOIN invoice i ON i.customer_id = c.customer_id
+GROUP BY 1
+ORDER BY 1
+
+# subquery antes de la query con WITH
+
+WITH [alias_name] AS ([subquery])
+SELECT [main_query] FROM... WHERE...
+
+UNION = OR
+INTERSECT = AND
+EXCEPT = AND NOT
+
+WITH 
+    india AS
+    (
+        SELECT * FROM customer
+        WHERE country = "India"
+    ),
+    total AS
+    (
+        SELECT 
+        india.customer_id,
+        SUM(i.total) total_purchases 
+        FROM india
+        INNER JOIN invoice i ON i.customer_id = india.customer_id
+        GROUP BY india.customer_id
+     )
+SELECT 
+    india.first_name || " " || india.last_name customer_name,
+    total.total_purchases
+FROM india 
+INNER JOIN total ON total.customer_id = india.customer_id
+ORDER BY 1

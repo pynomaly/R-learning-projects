@@ -1,0 +1,215 @@
+---
+title: "Data Analysis Workflow"
+author: "Ana Alvarez"
+date: "19/1/2021"
+output: html_document
+---
+
+# Introduction
+
+Our goal is to find which book is more profitable for a book store from the R learning section.
+
+## Exploring the dataset
+
+```{r}
+library(tidyverse)
+reviews <- read_csv("book_reviews.csv")
+reviews
+
+dim(reviews)
+
+cnames <- colnames(reviews)
+
+glimpse(reviews)
+
+# What are the column types?
+for (c in colnames(reviews)) {
+  print(typeof(reviews[[c]]))
+}
+```
+Our dataset has `2000` rows and `4` columns. The column names are: "book", "review", "state", "price".
+
+```{r}
+# Unique values present in each column
+for (c in colnames(reviews)) {
+  print("Unique values in the column")
+  print(c)
+  print(unique(reviews[[c]]))
+}
+
+```
+```{r}
+# How many NA values and in which column
+na_book <- reviews %>% 
+  filter(is.na(book)) %>% 
+  count()
+
+na_review <- reviews %>% 
+  filter(is.na(review)) %>% 
+  count()
+
+na_state <- reviews %>% 
+  filter(is.na(state)) %>% 
+  count()
+
+na_price <- reviews %>% 
+  filter(is.na(price)) %>% 
+  count()
+
+nas <- c(na_book = na_book, na_review = na_review, na_state = na_state, na_price = na_price)
+nas
+```
+
+Only the column review has NA values. We are going to clean all this rows. The cleaned dataset has 1794 rows. 206 rows with missing values have been deleted.
+
+```{r}
+reviews_cleaned <- reviews %>% 
+  filter(!(is.na(review)))
+
+reviews_cleaned
+```
+## Cleaning the dataset
+```{r}
+unique(reviews_cleaned$state)
+
+```
+In state column, we have two different ways to refer to a state (two letters and long way). We are going to unify them.
+```{r}
+reviews_cleaned <- reviews_cleaned %>% 
+  mutate(state = case_when(
+    state == "California" ~ "CA",
+    state == "New York" ~ "NY",
+    state == "Florida" ~ "FL",
+    state == "Texas" ~ "TX",
+    TRUE ~ state)
+  )
+
+unique(reviews_cleaned$state)
+```
+Review column is character type, create a numerical one based on it to make some calculations. Also we create a logical column to show high reviews.
+```{r}
+unique(reviews_cleaned$review)
+
+reviews_cleaned <- reviews_cleaned %>% 
+  mutate(review_num = case_when(
+    review == "Poor" ~ 1,
+    review == "Fair" ~ 2,
+    review == "Good" ~ 3,
+    review == "Great" ~ 4,
+    review == "Excellent" ~ 5
+  ),
+    is_high_review = if_else(review_num >= 4, TRUE, FALSE)
+  )
+
+head(reviews_cleaned)
+```
+
+## Looking for the most profitable book
+
+### The number of books purchased
+```{r}
+n_purchased <- reviews_cleaned %>% 
+  count(book) %>% 
+  arrange(-n)
+
+n_purchased
+```
+Differences between the number of books sold are not so significant. Just 14 between the most sold and the less sold. The total amount of money for each book can be more useful.
+
+### How much money generate each book
+```{r}
+reviews_cleaned
+
+money_per_book <- reviews_cleaned %>% 
+  group_by(book) %>% 
+  summarise(total = sum(price)) %>% 
+  arrange(-total)
+
+money_per_book
+```
+# Findings
+
+`Secrets Of R For Advanced Strudents` it by far the more profitable book. 
+
+
+# Conclusion
+
+We recommend to buy more copies of this book and reserve the best places in the store.
+
+
+## Other questions: 
+
+### Book with best reviews
+```{r}
+reviews_cleaned %>% 
+  group_by(book) %>% 
+  summarise(review_avg = round(mean(review_num), 2)) %>% 
+  arrange(-review_avg)
+
+```
+
+### Relationship between state and the books purchased
+```{r}
+reviews_cleaned %>% 
+  group_by(state) %>% 
+  summarise(total = sum(price)) %>% 
+  arrange(-total)
+
+reviews_cleaned %>% 
+  filter(state == "NY") %>% 
+  group_by(book) %>% 
+  summarise(n_books = n()) %>% 
+  arrange(-(n_books))
+
+reviews_cleaned %>% 
+  group_by(state, book) %>% 
+  summarise(sum_price = sum(price)) %>% 
+  arrange(-sum_price) %>% 
+  head(4)
+
+# Most profitable book in every state is "Secrets Of R For Advanced Students"
+
+most_sold_ca <- reviews_cleaned %>% 
+  group_by(state, book) %>% 
+  summarise(count_sold = n()) %>% 
+  arrange(-count_sold) %>% 
+  filter(state == "CA") %>% 
+  head(1)
+
+most_sold_fl <- reviews_cleaned %>% 
+  group_by(state, book) %>% 
+  summarise(count_sold = n()) %>% 
+  arrange(-count_sold) %>% 
+  filter(state == "FL") %>% 
+  head(1)
+
+most_sold_ny <- reviews_cleaned %>% 
+  group_by(state, book) %>% 
+  summarise(count_sold = n()) %>% 
+  arrange(-count_sold) %>% 
+  filter(state == "NY") %>% 
+  head(1)
+
+most_sold_tx <- reviews_cleaned %>% 
+  group_by(state, book) %>% 
+  summarise(count_sold = n()) %>% 
+  arrange(-count_sold) %>% 
+  filter(state == "TX") %>% 
+  head(1)
+
+most_sold_per_state <- rbind(most_sold_ca, most_sold_fl, most_sold_ny, most_sold_tx)
+
+most_sold_per_state
+
+# The most sold book in FL and NY is "Secrets Of R For Advanced Students". In CA and TX is other book.
+
+```
+
+
+
+
+
+
+
+
+

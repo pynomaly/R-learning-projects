@@ -1,0 +1,142 @@
+---
+title: "Analyzing Forest Fire Data"
+author: "Ana Alvarez"
+date: "21/1/2021"
+output: html_document
+---
+```{r}
+library(tidyverse)
+
+# Exploring data
+forest_fires <- read_csv("forestfires.csv")
+
+forest_fires %>% 
+  head()
+```
+The data we'll be working with is associated with a scientific research paper on predicting the occurrence of forest fires in Portugal using modeling techniques. 
+Source: http://www3.dsi.uminho.pt/pcortez/fires.pdf
+
+We'll perform exploratory analyses on the data to better understand it and any relationships that might be present in it.
+
+The variables in the dataset are:
+
+* X: X-axis spatial coordinate within the Montesinho park map: 1 to 9
+* Y: Y-axis spatial coordinate within the Montesinho park map: 2 to 9
+* month: Month of the year: 'jan' to 'dec'
+* day: Day of the week: 'mon' to 'sun'
+* FFMC: Fine Fuel Moisture Code index from the FWI system: 18.7 to 96.20
+* DMC: Duff Moisture Code index from the FWI system: 1.1 to 291.3
+* DC: Drought Code index from the FWI system: 7.9 to 860.6
+* ISI: Initial Spread Index from the FWI system: 0.0 to 56.10
+* temp: Temperature in Celsius degrees: 2.2 to 33.30
+* RH: Relative humidity in percentage: 15.0 to 100
+* wind: Wind speed in km/h: 0.40 to 9.40
+* rain: Outside rain in mm/m2 : 0.0 to 6.4
+* area: The burned area of the forest (in ha): 0.00 to 1090.84
+
+**FWI**: "fire weather index", a method used by scientists to quantify risk factors for forest fires.
+
+```{r}
+# exploring the month and day variable
+forest_fires %>% 
+  pull(month) %>% 
+  unique
+
+forest_fires %>% 
+  pull(day) %>% 
+  unique
+
+# convert month and day to categorical variables with an order
+
+month_levels = c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+day_levels = c("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+forest_fires <- forest_fires %>% 
+  mutate(
+    month = factor(month, levels = month_levels),
+    day = factor(day, levels = day_levels)
+  )
+
+```
+# Which months do forest fires happen the most? 
+```{r}
+fires_per_month <- forest_fires %>% 
+  group_by(month) %>% 
+  summarise(n_fires = n())
+
+fires_per_day <- forest_fires %>% 
+  group_by(day) %>% 
+  summarise(n_fires = n())
+
+fires_per_month
+
+fires_per_month %>% 
+  ggplot(aes(x = month, y = n_fires, fill = -n_fires)) +
+  geom_col() +
+  labs(title = "Number of fires per month",
+       y = "Number of fires"
+       ) +
+  scale_fill_continuous(name = "Number of fires")
+
+```
+August and September are the months with the highest number of fires, by far.
+
+```{r}
+fires_per_day %>% 
+  ggplot(aes(x= day, y = n_fires, fill = -n_fires)) +
+  geom_col() +
+  labs(title = "Number of fires per day ",
+       y = "Number of fires") +
+  scale_fill_continuous(name = "Number of fires")
+```
+Sunday, Friday and Saturday are the days of the week with more probabilities of fires. That points to human responsibility of those fires.
+
+# Relationships between the variables and time (months)
+
+```{r}
+colnames(forest_fires)
+
+forest_fires_long <- forest_fires %>% 
+  pivot_longer(cols = c("FFMC", "DMC", "DC", "ISI", "temp", "RH", "wind", "rain"),
+               names_to = "conditions",
+               values_to = "value")
+
+forest_fires_long %>% 
+  ggplot(aes(x = month, y = value)) +
+  geom_boxplot() +
+  facet_wrap(vars(conditions),
+             scales = "free_y") +
+  theme_light()
+  
+```
+We'll use this variable area as an indicator of the severity of the fire. 
+
+# Relationships between the area burned by a forest fire and the other variables
+
+```{r}
+forest_fires_long %>% 
+  ggplot(aes(x = value, y = area)) +
+  geom_point() +
+  facet_wrap(vars(conditions),
+             scales = "free_x") +
+  labs(title = "Relationship between environmental conditions and severity of fire",
+       ylab = "Area burnes (hectare)") +
+  theme_light()
+
+```
+Absence of rain has a direct relationship with severity of fire. Also high temperature, low humidity and high Fine Fuel Moisture Code.
+
+```{r}
+forest_fires_long %>% 
+  filter(area < 300) %>% 
+  ggplot(aes(x = value, y = area)) +
+  geom_point() +
+  facet_wrap(vars(conditions),
+             scales = "free_x") +
+  labs(title = "Relationship between environmental conditions and severity of fire",
+       ylab = "Area burnes (hectare)") +
+  theme_light()
+```
+If we remove outliers, setting a limit of 300 hectare for area extension, we can see direct relationship between absence of rain and quantity of fires. But no clear relationships for the other variables. 
+
+

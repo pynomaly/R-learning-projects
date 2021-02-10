@@ -1,0 +1,142 @@
+---
+title: "Book Sales"
+author: "Ana Alvarez"
+date: "20/1/2021"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(lubridate)
+
+
+# Exploring data
+
+sales_2019 <- read_csv("sales2019.csv")
+
+dim(sales_2019)
+
+colnames(sales_2019)
+
+for (col in colnames(sales_2019)) {
+  paste0(col, " : ", typeof(sales_2019[[col]])) %>% 
+    print
+}
+
+glimpse(sales_2019)
+
+sales_2019 %>% 
+  filter(is.na(title))
+
+```
+The dataset has `5000` rows and `5` columns. All columnas are character type except the `total_purchased` one, that's numerical. Date column has a character type. `total_purchased` and `user_submitted_review` has missing data.
+
+## Remove missing data in user_submitted_review
+```{r}
+
+# `885` rows have missing values in the `user_submitted_review`. We store them before cleaning the dataset.
+na_user_review <- sales_2019 %>% 
+  filter(is.na(user_submitted_review))
+
+sales_2019_clean <- sales_2019 %>% 
+  filter(!(is.na(user_submitted_review)))
+```
+
+## Average number of books sold per order
+```{r}
+avg_order <- sales_2019_clean %>% 
+  summarise(avg_order = mean(total_purchased, na.rm = TRUE))
+
+avg_order <- avg_order[[1]]
+
+avg_order
+```
+## Assign average order to missing values in total_purchased
+```{r}
+sales_2019_clean <- sales_2019_clean %>% 
+  mutate(
+    imputed_purchases = if_else(is.na(total_purchased), avg_order, total_purchased)
+    )
+
+sales_2019_clean
+```
+
+## Classify reviews as either positive or negative
+```{r}
+# unique sentences in `user_submitted_reviews`
+unique(sales_2019_clean$user_submitted_review)
+
+sales_2019_clean <- sales_2019_clean %>% 
+  mutate(classification = case_when(
+    str_detect(user_submitted_review, "okay") ~ "possitive",
+    str_detect(user_submitted_review, "Awesome") ~ "possitive",
+    str_detect(user_submitted_review, "OK") ~ "possitive",
+    str_detect(user_submitted_review, "learned") ~ "possitive",
+    str_detect(user_submitted_review, "Never") ~ "possitive",
+    TRUE ~ "negative"
+  ))
+
+sales_2019_clean %>% 
+  count(classification) %>% 
+  arrange(-n)
+
+```
+## Was the new book program effective in increasing book sales?
+The program started on July 1st, 2019. We want to analyze is sales increase after this date.
+
+```{r}
+# conversion of the date column
+
+sales_2019_clean
+
+sales_2019_clean <- sales_2019_clean %>% 
+  mutate(date = mdy(date))
+  
+```
+```{r}
+# Column to show if purchase is after or before the program started
+
+program_date <- ymd("20190701")
+
+comprobation_date <- function(a_date){
+  if(a_date >= program_date){return("after")
+    }else{return("before")}
+}
+
+sales_2019_clean <- sales_2019_clean %>% 
+  mutate(program = unlist(map(date, comprobation_date)))
+
+sales_2019_clean
+
+sales_2019_clean %>% 
+  group_by(program) %>% 
+  summarise(amount = sum(imputed_purchases))
+
+sales_2019_clean %>% 
+  group_by(program, customer_type) %>% 
+  summarise(total_sales = sum(imputed_purchases))
+
+sales_2019_clean %>% 
+  group_by(program, classification) %>% 
+  summarise(amount = n())
+```
+## Conclussion
+
+* The amount of books sold is similar before and after the program started. 
+* Sales by business increased after the program. Sales by individuals decreased.
+* The negative reviews increased after the beginning of the program.
+
+
+# Extra analysis
+Is there any relationship between month and the amount of books that were sold? 
+
+```{r}
+
+sales_2019_clean %>% 
+  mutate(month = month(date)) %>% 
+  group_by(month) %>% 
+  summarise(amount = sum(imputed_purchases))
+
+```
+December was the best month in books sold of the year (Christmas gifts?). 
+
+

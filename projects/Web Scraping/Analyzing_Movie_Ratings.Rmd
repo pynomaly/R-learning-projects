@@ -1,0 +1,138 @@
+---
+title: "Analyzing Movie Ratings"
+output: html_document
+---
+# Goal
+To extract data from the top 30 movies between March and July 2020 and check wether ratings correlate to user votes.
+```{r}
+library(rvest)
+library(dplyr)
+library(ggplot2)
+
+url <- "http://dataquestio.github.io/web-scraping-pages/IMDb-DQgp.html" # Stable copy of imdb webpage
+wp_content <- read_html(url)
+```
+
+```{r}
+# Examples converting text into numbers or cleaning text
+as.numeric("10.50")
+as.numeric(c("14.59", "3.14", "55"))
+readr::parse_number(c("14 min", "17.35", "(2012)", "1,2,3,4"))
+stringr::str_trim(" Spaces before and after should disappear    ")
+
+```
+```{r}
+titles <- wp_content %>% 
+  html_nodes(".lister-item-header a") %>% 
+  html_text()
+titles
+length(titles)
+
+years <- wp_content %>% 
+  html_nodes(".lister-item-header .lister-item-year") %>% 
+  html_text() %>% 
+  readr::parse_number()
+years
+length(years)
+```
+
+```{r}
+minutes <- wp_content %>% 
+  html_nodes(".lister-item-content .runtime") %>% 
+  html_text() %>% 
+  readr::parse_number()
+
+length(minutes)
+```
+```{r}
+movie_genre <- wp_content %>% 
+  html_nodes(".lister-item-content .genre") %>% 
+  html_text() %>% 
+  stringr::str_trim()
+
+movie_genre
+
+length(movie_genre)
+```
+```{r}
+# Stars from rating score
+
+ratings <- wp_content %>% 
+  html_nodes(".lister-item-content .ratings-imdb-rating") %>% 
+  html_attr("data-value") %>% 
+  as.numeric()
+
+length(ratings)
+```
+```{r}
+# Metascore rating
+
+metascore <- wp_content %>% 
+  html_nodes(".lister-item-content .ratings-metascore") %>% 
+  html_text() %>% 
+  readr::parse_number()
+
+length(metascore)
+```
+```{r}
+# Votes
+votes <- wp_content %>% 
+  html_nodes(".lister-item-content .sort-num_votes-visible") %>% 
+  html_text() %>% 
+  readr::parse_number()
+
+length(votes)
+```
+```{r}
+# Insert missing values into de vectors
+
+append_vector <- function(vector, inserted_indices, values){
+
+  ## Creating the current indices of the vector
+  vector_current_indices <- 1:length(vector)
+  
+  ## Adding small amount of values (between 0 and 0.9) to the `inserted_indices`
+  new_inserted_indices <- inserted_indices + seq(0, 0.9, length.out = length(inserted_indices))
+
+  ## Appending the `new_inserted_indices` to the current vector indices
+  indices <- c(vector_current_indices, new_inserted_indices)
+
+  ## Ordering the indices
+  ordered_indices <- order(indices)
+
+  ## Appending the new value to the existing vector
+  new_vector <- c(vector, values)
+
+  ## Ordering the new vector wrt the ordered indices
+  new_vector[ordered_indices]
+}
+
+# completing metascore vector with NA
+metascore <- append_vector(metascore, c(1, 1, 1, 13, 24), NA)
+
+# we'll remove the 17th element from all the vectors with a length of 30
+titles <- titles[-17]
+years <- years[-17]
+minutes <- minutes[-17]
+movie_genre <- movie_genre[-17]
+metascore <- metascore[-17]
+
+length(metascore)
+
+# Append all vectors in tibble
+
+movie_df <- tibble::tibble("title" = titles,
+               "year" = years,
+               "genre" = movie_genre,
+               "rating" = floor(ratings),
+               "metascore" = metascore,
+               "vote" = votes
+               )
+
+movie_df %>% 
+  ggplot(aes(x=rating, y=vote, group = rating, fill = rating)) +
+  geom_boxplot() +
+  theme_light()
+```
+
+

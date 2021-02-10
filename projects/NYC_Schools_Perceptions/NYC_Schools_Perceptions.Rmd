@@ -1,0 +1,198 @@
+---
+title: "NYC Schools Perceptions"
+output: html_document
+---
+# Introduction 
+Our goal in this project is leaning and analyzing Data on parent, student, and teacher perceptions of New York City schools collected using surveys.
+
+# Download sources from NYC surveys and scores
+
+```{r}
+library(tidyverse)
+combined <- read.csv("combined.csv") # SAT scores
+gened_final <- read_tsv("2011_data_files/masterfile11_gened_final.txt") # General survey
+d75_final <- read_tsv("2011_data_files/masterfile11_d75_final.txt") # District 75 survey
+```
+* `combined.csv` is a file already prepared for analysis, with information about SAT scores in schools from NYC.
+
+* `masterfile11_d75_final.txt` contains survey data for District 75 schools in NYC, which provide exceptional education support for children with special needs such as learning or physical disabilities. 
+
+* `masterfile11_gened_final.txt` contains survey data for "general education" schools — those that do not specifically serve populations with special needs. 
+
+```{r}
+head(combined)
+dim(d75_final)
+dim(gened_final)
+
+# general education only high shools
+gened_final <- gened_final %>% 
+  filter(schooltype == "High School") %>% 
+  select(dbn:aca_tot_11)
+
+# d75 only cols with aggregated values (_11)
+d75_final <- d75_final %>% 
+  select(dbn:aca_tot_11)
+
+surveys <- d75_final %>% 
+  bind_rows(gened_final)
+
+# TCombine the general education and District 75 survey dataframes 
+colnames(combined)
+colnames(surveys)
+
+# Change the key name `dbn` to lowercase for left joining both tibles.
+combined <- combined %>% 
+  rename(dbn = DBN)
+
+dim(combined)
+
+# We will retain only observations in the survey dataframe that correspond to observations in combined
+colnames(complete)
+
+complete <- combined %>% 
+  left_join(surveys, by = "dbn")
+
+```
+
+# Relationships between pairs of variables
+```{r}
+cor_mat <- complete %>%
+  select(avg_sat_score, saf_p_11:aca_tot_11) %>% 
+  cor(use = "pairwise.complete.obs")
+
+cor_tib <- cor_mat %>%
+  as_tibble(rownames = "variable")
+
+cor_tib
+
+sat_cors <- cor_tib %>%
+  select(variable, avg_sat_score) %>%
+  filter(avg_sat_score > 0.25 | avg_sat_score < -0.25)
+
+# More relevant relationships with avg_sat_score
+sat_cors %>% 
+  tail(4) %>% 
+  arrange()
+
+# Scatter plot of most relevant variables
+scatter_variables <- complete %>% 
+  pivot_longer(cols = c(saf_t_11, saf_s_11, aca_s_11, saf_tot_11),
+               names_to = "variables",
+               values_to = "value") %>% 
+  ggplot(aes(x = value, y = avg_sat_score, color = variables)) +
+    geom_point() +
+    facet_wrap(~variables)
+
+scatter_variables
+```
+# See whether parents, students, and teachers have similar perceptions about the four school quality metrics they were surveyed
+```{r}
+colnames(complete)
+
+complete_longer <- complete %>% 
+  pivot_longer(cols = saf_p_11:aca_tot_11,
+               names_to = "variables",
+               values_to = "value")
+
+complete_longer
+complete_longer <- complete_longer %>% 
+  mutate(response_type = str_sub(variables, start = 4, end = 6),
+         metric = str_sub(variables, start = 1, end = 3))
+
+complete_longer <- complete_longer %>% 
+  mutate(metric = ifelse(metric == "aca", "academic expectations",
+                         ifelse(metric == "eng", "engagement",
+                                ifelse(metric == "saf", "safety and respect",
+                                       ifelse(metric == "com", "communication", "NA")))),
+         response_type = ifelse(response_type == "_p_", "parents",
+                                ifelse(response_type == "_t_", "teachers",
+                                       ifelse(response_type == "_s_", "students",
+                                              ifelse(response_type == "_to", "total", "NA")))))
+
+complete_longer %>% 
+  filter(response_type != "total") %>% 
+  group_by(metric, response_type) %>% 
+  summarise(mean = mean(value, na.rm = TRUE))
+
+
+complete_longer %>% 
+  filter(response_type != "total") %>% 
+  ggplot(aes(x = metric, y = value, fill = response_type)) +
+  geom_boxplot() +
+  facet_grid(~response_type) +
+  ylim(0, 10) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+As we can see, teachers are the most confident with the educational levels are parents. Students are critical with communication and engagement above all, and parents are happy with safety and respect. If we evaluate the average score, students are the most critical group.
+
+# Is there a relationship between gender percentages and average SAT scores? How about for the different sections of the SAT (Reading, Writing, and Math)? 
+```{r}
+complete %>% 
+  select(male_per, female_per, SAT.Critical.Reading.Avg..Score, SAT.Math.Avg..Score, SAT.Writing.Avg..Score) %>% 
+  cor(use = "pairwise.complete.obs")
+```
+As we can see, there are no clear correlation between male/female percentage and SAT scores. Any of the correlation indicators are above 0.25 or below -0.25.
+
+```{r}
+complete %>% 
+  pivot_longer(cols = c(SAT.Critical.Reading.Avg..Score, SAT.Math.Avg..Score, SAT.Writing.Avg..Score),
+               names_to = "SAT",
+               values_to = "SAT_score") %>% 
+  ggplot(aes(x = male_per, y = SAT_score, color = SAT)) +
+  geom_boxplot()
+```
+
+It looks like schools with a balance level of male/female students score slightly high than the others.
+
+# Which NYC schools seem to have the best quality metrics according to survey data? Is there a difference if you break this down by response type?
+```{r}
+complete_longer %>% 
+  group_by(school_name) %>% 
+  summarise(survey_score = sum(value, na.rm = TRUE)) %>% 
+  arrange(-survey_score) %>% 
+  head(1)
+
+complete_longer %>% 
+  group_by(school_name) %>% 
+  filter(response_type == "parents") %>% 
+  summarise(survey_score = sum(value, na.rm = TRUE)) %>% 
+  arrange(-survey_score) %>% 
+  head(1)
+
+complete_longer %>% 
+  group_by(school_name) %>% 
+  filter(response_type == "teachers") %>% 
+  summarise(survey_score = sum(value, na.rm = TRUE)) %>% 
+  arrange(-survey_score) %>% 
+  head(1)
+
+complete_longer %>% 
+  group_by(school_name) %>% 
+  filter(response_type == "students") %>% 
+  summarise(survey_score = sum(value, na.rm = TRUE)) %>% 
+  arrange(-survey_score) %>% 
+  head(1)
+
+```
+The top school by general survey score is URBAN ACADEMY LABORATORY HIGH SCHOOL. Is the same for parents survey. The best for teachers is MANHATTAN ACADEMY FOR ARTS & LANGUAGE. And the best for students is INDEPENDENCE HIGH SCHOOL.
+
+
+# if you created a new variable by subtracting saf_p_11 from saf_s_11, do you think this difference in how students and parents perceive safety may be related to any other variables? 
+
+```{r}
+complete
+
+complete %>% 
+  mutate(diff_par_stu = saf_p_11 - saf_s_11) %>% 
+  arrange(diff_par_stu) %>% 
+  select(diff_par_stu)
+
+complete %>% 
+  mutate(diff_par_stu = saf_p_11 - saf_s_11) %>% 
+  select(diff_par_stu, high_score_percent, white_per, black_per, avg_class_size, frl_percent, ell_percent, sped_percent, dropout_percent) %>% 
+  cor(use = "pairwise.complete.obs")
+
+```
+high_score_percent is inverse to the difference between parents and students perception of safety. The high the scores, the low difference of perception. Perception of parents is higher than students in all schools except three.
+
