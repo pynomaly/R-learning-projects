@@ -22,4 +22,5 @@ This is a compilation of all the guided projects I've done throughout the Data A
 **Probability and Statistics**
 * [Investigating Fandango Movie Ratings](projects/Investigating-Fandango-Movie_Rating/Investigating_Fandango_Movie_Ratings.Rmd)
 
+* [Finding Best Markets to Advertise in](projects/Best_Markets/Finding_Best_Markets_to_Advertise_In.Rmd)
 

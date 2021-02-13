@@ -1,0 +1,278 @@
+---
+title: "Finding the Best Markets to Advertise In"
+author: "Ana Alvarez"
+date: "13/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We will analize data from freeCodeCamp's 2017 New Coder Survey (freeCodeCamp is a free e-learning platform that offers courses on web development). Our goal is to find out the two best markets to advertise in for an e-learning company that offers courses on programming.
+
+The survey data is publicly available in [this GitHub repository](https://github.com/freeCodeCamp/2017-new-coder-survey).
+
+We want to answer questions about a population of new coders that are interested in the subjects we teach. We'd like to know:
+
+    * Where are these new coders located.
+    * What are the locations with the greatest number of new coders.
+    * How much money new coders are willing to spend on learning.
+
+# First step: Is data representative for our population of interest?
+
+```{r}
+library(dplyr)
+library(readr)
+
+survey <- read_csv("2017-fCC-New-Coders-Survey-Data.csv")
+
+```
+
+Population of new coders that are interested in the subjects we teach:
+```{r}
+glimpse(survey)
+
+survey %>%
+  group_by(JobRoleInterest) %>%
+  summarise(freq = round(n()*100/nrow(survey), 2)) %>%
+  arrange(desc(freq))
+```
+Ranking of interests:
+. Web development related roles
+. Mobile development related roles
+. Others
+
+Many respondents are interested in more than one subject. Steps:
+* Drop the NA values
+* Split each string in the `JobRoleInterest` column to find the number of options for each participant.
+
+```{r}
+number_interests <- survey %>% 
+  select(JobRoleInterest) %>% 
+  tidyr::drop_na() %>% 
+  rowwise() %>%  # to apply method by row and not by column
+  mutate(opts = length(stringr::str_split(JobRoleInterest, ",")[[1]]))
+
+number_interests %>% 
+  ungroup() %>% # to change the rowwise
+  group_by(opts) %>% 
+  summarise(freq = round(n()*100 / nrow(number_interests), 2))
+```
+Majority of students have mixed interests. But given that we offer courses on various subjects, this can't be a problem.
+
+```{r}
+# how many respondents chose web or mobile development
+
+survey %>% 
+  mutate(web_or_mobile = stringr::str_detect(JobRoleInterest, "Web Developer|Mobile Developer")) %>% 
+  tidyr::drop_na(JobRoleInterest) %>% 
+  group_by(web_or_mobile) %>% 
+  summarise(count = n()) %>% 
+  mutate(freq = count*100 /sum(count))
+
+```
+
+
+# Where are new coders located?
+
+origin = CountryCitizen variable
+live = CountryLive variable
+
+We'll work with the CountryLive variable because we're interested where people actually live at the moment when we run the ads.
+
+```{r}
+# respondents of job role interest
+survey_good <- survey %>%
+  tidyr::drop_na(JobRoleInterest) 
+
+# group the data by country
+survey_good <- survey_good %>% 
+  tidyr::drop_na(CountryLive) 
+
+survey_good %>% 
+  group_by(CountryLive) %>% 
+  summarise(freq = n(), percent = n()*100 / nrow(survey_good)) %>% 
+  arrange(-freq)
+```
+We select the first four countries, because they also are english speakers.
+
+# Money for Learning per month
+```{r}
+survey_good %>% 
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  tidyr::drop_na(MoneyForLearning) %>% 
+  group_by(CountryLive) %>% 
+  summarise(money_mean = mean(MoneyForLearning)) %>% 
+  arrange(-money_mean)
+
+# Rows with MonthsProgramming == 0
+survey_good %>% 
+  select(MonthsProgramming) %>% 
+  filter(MonthsProgramming == 0) %>% 
+  nrow()
+
+# Replace 0s with 1s to avoid division by 0
+survey_good <- survey_good %>% 
+  mutate(MonthsProgramming = case_when(MonthsProgramming == 0 ~1, 
+                                       TRUE ~ MonthsProgramming)) %>% 
+  mutate(money_per_month = MoneyForLearning / MonthsProgramming)
+
+# Rows with money_per_month != NA
+survey_good  <- survey_good %>% 
+  tidyr::drop_na(money_per_month)
+
+# Group by country
+survey_good %>% 
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  group_by(CountryLive) %>% 
+  summarise(money_mean = round(mean(money_per_month), 1)) %>% 
+  arrange(-money_mean)
+```
+It's surprising that people from UK spend less than people from India. 
+
+# Removing outliers
+```{r}
+# Visualizing distribution of the `money_per_month` variable
+
+only_4 <- survey_good %>% 
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada'))
+
+nrow(only_4)
+nrow(survey_good)
+
+library(ggplot2)
+
+only_4 %>% 
+  ggplot(aes(x = CountryLive, y = money_per_month)) +
+  geom_boxplot() +
+  ggtitle("Money Spent per Month and Country") +
+  xlab("Country") +
+  ylab("Money per Month") +
+  theme_bw()
+```
+We can see values in US above \$40,000 per month. We'll remove every value that goes over \$20,000 per month.
+
+# Removing outliers from US
+
+```{r}
+survey_good <- survey_good %>% 
+  filter(money_per_month < 20000)
+
+countries_mean = survey_good %>%
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>%
+  group_by(CountryLive) %>%
+  summarise(mean = mean(money_per_month)) %>%
+  arrange(desc(mean))
+
+survey_good %>%
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  ggplot(aes(x = CountryLive, y = money_per_month)) +
+  geom_boxplot() +
+  ggtitle("Money Spent Per Month Per Country\n(Distributions)") +
+  xlab("Country") +
+  ylab("Money per month (US dollars)") +
+  theme_bw()
+  
+```
+
+# Analyzing outliers
+
+```{r}
+# india outliers
+survey_good %>% 
+  filter(CountryLive == "India" & money_per_month > 2500) %>% 
+  select(money_per_month, BootcampName, BootcampFinish, BootcampLoanYesNo, BootcampRecommend)
+```
+No one of the India outliers seem to have done a bootcamp. The amount looks not very realistic. We are going to remove this rows.
+```{r}
+
+# remove india outliers
+survey_good <- survey_good %>% 
+  filter(!(CountryLive == "India" & money_per_month > 2500))
+
+survey_good %>%
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  ggplot(aes(x = CountryLive, y = money_per_month)) +
+  geom_boxplot() +
+  ggtitle("Money Spent Per Month Per Country\n(Distributions)") +
+  xlab("Country") +
+  ylab("Money per month (US dollars)") +
+  theme_bw()
+
+
+```
+Results look more realistic. 
+```{r}
+# us outliers
+survey_good %>% 
+  filter(CountryLive == "United States of America" & money_per_month >= 6000)
+
+# remove outliers didn't attend Bootcamp
+survey_good <- survey_good %>% 
+  filter(!(CountryLive == "United States of America" & 
+           money_per_month >= 6000  &
+           AttendedBootcamp == 0))
+
+# remove outliers that had been programming for less than 3 months and attend bootcamps
+survey_good %>% 
+  filter(CountryLive == "United States of America" & 
+           money_per_month >= 6000  &
+           MonthsProgramming <= 3) %>% 
+  select(money_per_month, MonthsProgramming)
+
+survey_good <- survey_good %>% 
+  filter(!(CountryLive == "United States of America" & 
+           money_per_month >= 6000  &
+           MonthsProgramming <= 3)) 
+```
+Out of 11 outliers, 6 made bootcamps but 5 didn't. We remove these 5 rows. The others seem have paid a lot of money at the beginning to enroll a bootcamp and the money per month is very high.
+
+```{r}
+survey_good %>%
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  ggplot(aes(x = CountryLive, y = money_per_month)) +
+  geom_boxplot() +
+  ggtitle("Money Spent Per Month Per Country\n(Distributions)") +
+  xlab("Country") +
+  ylab("Money per month (US dollars)") +
+  theme_bw()
+```
+```{r}
+# canada outlier
+survey_good %>% 
+  filter(CountryLive == "Canada" & money_per_month > 4500) %>% 
+  select(MonthsProgramming, money_per_month)
+  
+
+```
+He seems to have paid a large sum of money in the beginning to enroll in a bootcamp, and then he probably didn't spend anything for the next couple of months after the survey. We'll take the same approach here as for the US and remove this outlier.
+
+```{r}
+survey_good <- survey_good %>% 
+  filter(!(CountryLive == "Canada" & money_per_month > 4500))
+
+survey_good %>%
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  ggplot(aes(x = CountryLive, y = money_per_month)) +
+  geom_boxplot() +
+  ggtitle("Money Spent Per Month Per Country\n(Distributions)") +
+  xlab("Country") +
+  ylab("Money per month (US dollars)") +
+  theme_bw()
+```
+Let's recompute the mean values.
+
+```{r}
+survey_good %>% 
+  filter(CountryLive %in% c('United States of America', 'India', 'United Kingdom', 'Canada')) %>% 
+  group_by(CountryLive) %>% 
+  summarise(money_mean = round(mean(money_per_month), 1)) %>% 
+  arrange(-money_mean)
+```
+Considering the results we've found so far, one country we should definitely advertise in is the US. There are a lot of new coders living there and they are willing to pay a good amount of money each month. The second country could be Canada. But we think India is an incresing market with good perspective.
+
+
+
+
+
